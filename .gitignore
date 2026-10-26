@@ -1,0 +1,49 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Logs / runtime
+*.log
+*.pid
+.server.pid
+.py.pid
+
+# Local data (account credentials live here — never commit)
+.data/
+agently-py-data/
+agently-web-real/
+agently-py-real/
+
+# Caddy runtime artefacts (TLS certs are sensitive — never commit)
+caddy-logs/
+backups/
+.compose.override.yml
+
+# Local environment
+.env
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary / scratch
+*.tmp
+*.bak
+*.orig

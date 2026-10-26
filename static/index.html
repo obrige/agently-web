@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agently Web — 邮箱</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231a73e8'/><path d='M20 32h60v36H20z' fill='none' stroke='white' stroke-width='6'/><path d='M20 34l40 24 40-24' fill='none' stroke='white' stroke-width='6'/></svg>">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<!-- ══════════════════ LOGIN ══════════════════ -->
+<div id="login-view" class="login-view hidden">
+  <div class="login-card">
+    <div class="login-logo">
+      <svg viewBox="0 0 100 100" width="56" height="56"><rect width="100" height="100" rx="22" fill="#1a73e8"/><path d="M20 32h60v36H20z" fill="none" stroke="#fff" stroke-width="6"/><path d="M20 34l40 24 40-24" fill="none" stroke="#fff" stroke-width="6"/></svg>
+    </div>
+    <h1>Agently Web</h1>
+    <p class="login-sub">QQ 邮箱 · Agent 原生网页客户端</p>
+
+    <div id="login-step-start">
+      <button id="btn-login-start" class="btn btn-primary btn-lg">使用 OAuth 授权登录</button>
+      <p class="login-note">将跳转腾讯授权页完成扫码/确认，凭证仅保存在本机。</p>
+    </div>
+
+    <div id="login-step-wait" class="hidden">
+      <div class="login-code-box">
+        <div class="login-code-label">授权码</div>
+        <div id="login-user-code" class="login-user-code">------</div>
+      </div>
+      <p class="login-instruction">请点击或复制以下链接在浏览器中完成授权：</p>
+      <a id="login-browser-url" class="login-url" href="#" target="_blank" rel="noopener"></a>
+      <div class="login-status">
+        <span id="login-spinner" class="spinner"></span>
+        <span id="login-status-text">等待授权…</span>
+      </div>
+      <p id="login-expiry" class="login-expiry"></p>
+      <button id="btn-login-cancel" class="btn btn-ghost">取消</button>
+    </div>
+
+    <div id="login-step-error" class="hidden">
+      <div class="alert alert-error" id="login-error-text"></div>
+      <button id="btn-login-retry" class="btn btn-primary">重试</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ APP ══════════════════ -->
+<div id="app-view" class="app hidden">
+
+  <!-- top bar -->
+  <header class="topbar">
+    <button id="btn-menu" class="icon-btn" title="菜单">☰</button>
+    <div class="brand">
+      <svg viewBox="0 0 100 100" width="26" height="26"><rect width="100" height="100" rx="22" fill="#1a73e8"/><path d="M20 32h60v36H20z" fill="none" stroke="#fff" stroke-width="7"/><path d="M20 34l40 24 40-24" fill="none" stroke="#fff" stroke-width="7"/></svg>
+      <span>Agently</span>
+    </div>
+
+    <div class="searchbar">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input id="search-input" type="text" placeholder="搜索邮件…" autocomplete="off">
+      <select id="search-scope" class="search-scope" title="搜索范围">
+        <option value="">全部</option>
+        <option value="SEARCH_IN_SUBJECT">主题</option>
+        <option value="SEARCH_IN_CONTENT">正文</option>
+      </select>
+    </div>
+
+    <div class="topbar-right">
+      <button id="btn-refresh" class="icon-btn" title="刷新">⟳</button>
+      <div class="account-menu">
+        <button id="btn-account" class="account-btn" title="账号">
+          <span id="account-avatar" class="avatar">?</span>
+        </button>
+        <div id="account-dropdown" class="dropdown hidden">
+          <div class="dropdown-header">
+            <div id="dd-email" class="dd-email"></div>
+            <div id="dd-alias" class="dd-alias"></div>
+          </div>
+          <div class="dropdown-section">切换账号</div>
+          <div id="dd-accounts" class="dd-accounts"></div>
+          <button id="btn-add-account" class="dropdown-item">＋ 添加账号</button>
+          <div class="dropdown-divider"></div>
+          <button id="btn-manage-accounts" class="dropdown-item">管理账号</button>
+          <button id="btn-contacts" class="dropdown-item">地址簿</button>
+          <button id="btn-settings" class="dropdown-item">设置 · 签名</button>
+          <button id="btn-logout" class="dropdown-item danger">退出登录</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="body">
+    <!-- sidebar -->
+    <aside id="sidebar" class="sidebar">
+      <button id="btn-compose" class="compose-btn">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        写邮件
+      </button>
+
+      <nav class="nav" id="folder-nav">
+        <button class="nav-item active" data-folder="inbox">
+          <span class="nav-icon">📥</span><span class="nav-label">收件箱</span><span class="nav-badge" id="badge-inbox"></span>
+        </button>
+        <button class="nav-item" data-folder="unread">
+          <span class="nav-icon">✉️</span><span class="nav-label">未读</span>
+        </button>
+        <button class="nav-item" data-folder="sent">
+          <span class="nav-icon">📤</span><span class="nav-label">已发送</span>
+        </button>
+        <button class="nav-item" data-folder="trash">
+          <span class="nav-icon">🗑️</span><span class="nav-label">回收站</span>
+        </button>
+        <button class="nav-item" data-folder="starred">
+          <span class="nav-icon">⭐</span><span class="nav-label">星标邮件</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-section">
+        <div class="sidebar-title">邮箱别名</div>
+        <div id="alias-list" class="alias-list"></div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div id="conn-status" class="conn-status"><span class="dot"></span><span id="conn-text">就绪</span></div>
+      </div>
+    </aside>
+
+    <!-- message list -->
+    <section id="list-pane" class="list-pane">
+      <div class="list-toolbar">
+        <div id="list-title" class="list-title">收件箱</div>
+        <div class="list-toolbar-actions">
+          <button id="btn-empty-trash" class="text-btn hidden">清空回收站</button>
+          <span id="list-count" class="list-count"></span>
+        </div>
+      </div>
+      <div id="message-list" class="message-list">
+        <div class="empty-state"><div class="empty-icon">📭</div><p>加载中…</p></div>
+      </div>
+    </section>
+
+    <!-- reading pane -->
+    <section id="read-pane" class="read-pane">
+      <div class="read-placeholder">
+        <div class="empty-icon">📬</div>
+        <p>选择一封邮件开始阅读</p>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- ══════════════════ COMPOSE ══════════════════ -->
+<div id="compose-modal" class="modal hidden">
+  <div class="compose-box">
+    <div class="compose-head">
+      <span id="compose-title">新邮件</span>
+      <button id="btn-compose-close" class="icon-btn sm">✕</button>
+    </div>
+    <div class="compose-body">
+      <div class="compose-row">
+        <input id="compose-to" type="text" list="contacts-datalist" placeholder="收件人（多个用逗号分隔）">
+        <datalist id="contacts-datalist"></datalist>
+      </div>
+      <div class="compose-row">
+        <input id="compose-cc" type="text" placeholder="抄送">
+      </div>
+      <div class="compose-row">
+        <input id="compose-bcc" type="text" placeholder="密送">
+      </div>
+      <div class="compose-row">
+        <input id="compose-subject" type="text" placeholder="主题">
+      </div>
+      <div class="compose-row">
+        <select id="compose-format" class="compose-format">
+          <option value="PLAIN">纯文本</option>
+          <option value="MARKDOWN" selected>Markdown</option>
+          <option value="HTML">HTML</option>
+        </select>
+      </div>
+      <div class="compose-row">
+        <textarea id="compose-body" placeholder="正文…"></textarea>
+      </div>
+      <div id="compose-attachments" class="compose-attachments"></div>
+      <div id="compose-quoted" class="compose-quoted hidden"></div>
+    </div>
+    <div class="compose-foot">
+      <div class="compose-foot-left">
+        <button id="btn-send" class="btn btn-primary">发送</button>
+        <label class="btn btn-ghost file-label">
+          附件
+          <input id="compose-files" type="file" multiple hidden>
+        </label>
+      </div>
+      <div id="compose-status" class="compose-status"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ CONFIRM ══════════════════ -->
+<div id="confirm-modal" class="modal hidden">
+  <div class="confirm-box">
+    <div class="confirm-title">确认操作</div>
+    <div id="confirm-text" class="confirm-text"></div>
+    <div class="confirm-actions">
+      <button id="btn-confirm-no" class="btn btn-ghost">取消</button>
+      <button id="btn-confirm-yes" class="btn btn-primary">确认</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ ACCOUNTS ══════════════════ -->
+<div id="accounts-modal" class="modal hidden">
+  <div class="accounts-box">
+    <div class="accounts-head">
+      <span>管理账号</span>
+      <button id="btn-accounts-close" class="icon-btn sm">✕</button>
+    </div>
+    <div id="accounts-list" class="accounts-list"></div>
+  </div>
+</div>
+
+<!-- ══════════════════ SETTINGS (signature) ══════════════════ -->
+<div id="settings-modal" class="modal hidden">
+  <div class="settings-box">
+    <div class="settings-head">
+      <span>设置 · 邮件签名</span>
+      <button id="btn-settings-close" class="icon-btn sm">✕</button>
+    </div>
+    <div class="settings-body">
+      <p class="settings-hint">签名会在新建邮件 / 回复时自动附加到正文末尾。</p>
+      <label>纯文本签名</label>
+      <textarea id="sig-plain" rows="6" placeholder="—&#10;Your Name&#10;you@example.com"></textarea>
+      <label>HTML 签名（可选，发 HTML 邮件时使用）</label>
+      <textarea id="sig-html" rows="4" placeholder="<p>—<br>Your Name<br>you@example.com</p>"></textarea>
+      <div class="settings-foot">
+        <button id="btn-sig-save" class="btn btn-primary">保存签名</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ CONTACTS ══════════════════ -->
+<div id="contacts-modal" class="modal hidden">
+  <div class="accounts-box">
+    <div class="accounts-head">
+      <span>地址簿</span>
+      <button id="btn-contacts-close" class="icon-btn sm">✕</button>
+    </div>
+    <div id="contacts-list" class="accounts-list"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>

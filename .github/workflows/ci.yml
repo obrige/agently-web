@@ -1,0 +1,229 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  # --------------------------------------------------------------------- #
+  # 1. Lint — ruff + black format check + mypy strict
+  # --------------------------------------------------------------------- #
+  lint:
+    name: Lint (ruff + black + mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install linters
+        run: pip install ruff==0.7.4 black==24.10.0 mypy==1.13.0
+
+      - name: Ruff (lint + format check)
+        run: |
+          ruff check agently server.py tests
+          ruff format --check agently server.py tests
+
+      - name: Black (format check, no changes applied)
+        run: black --check --diff agently server.py tests
+
+      - name: Mypy (strict)
+        run: mypy --strict --ignore-missing-imports agently
+
+  # --------------------------------------------------------------------- #
+  # 2. Test — pytest must pass on every Python we ship in the image
+  # --------------------------------------------------------------------- #
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Compile-check every .py file
+        run: python -m compileall -q agently server.py tests
+
+      - name: Install pytest
+        run: pip install pytest==9.1.1
+
+      - name: Run test suite
+        run: python -m pytest tests -v
+
+  # --------------------------------------------------------------------- #
+  # 3. Build & push image — runs on push to main and on version tags
+  # --------------------------------------------------------------------- #
+  docker:
+    name: Build & push image (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+          - platform: linux/arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # Always push to ghcr.io/<your-github-username>/agently-web — independent
+          # of the repo name. Works for forks, renames, and private mirrors.
+          images: ghcr.io/${{ github.repository_owner }}/agently-web
+          tags: |
+            # branch / tag refs
+            type=ref,event=branch
+            type=ref,event=tag
+            type=ref,event=pr
+            # semver derived from v* tags
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            # rolling tags
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=stable,enable={{is_default_branch}}
+            # full sha for reproducibility
+            type=sha,format=long
+            type=sha,format=short
+          labels: |
+            org.opencontainers.image.title=agently-web
+            org.opencontainers.image.description=Gmail-style web client for the Agently (QQ Mail Agent) protocol
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository_owner }}/agently-web
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.vendor=${{ github.repository_owner }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+          provenance: true
+          sbom: true
+
+  # --------------------------------------------------------------------- #
+  # 4. Compose integration test — verify the published image actually
+  #    works with the docker-compose.yml we ship in the repo
+  # --------------------------------------------------------------------- #
+  compose-smoke:
+    name: Compose smoke (demo mode)
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: agently-web:ci-${{ github.sha }}
+          cache-from: type=gha
+
+      - name: Validate compose files
+        run: |
+          docker compose -f docker-compose.yml config --quiet
+          docker compose -f docker-compose.yml --profile demo config --quiet
+
+      - name: Start demo stack
+        env:
+          AGENTLY_WEB_IMAGE: agently-web:ci-${{ github.sha }}
+        run: |
+          cat > .compose.override.yml <<EOF
+          services:
+            agently-web-demo:
+              image: \${AGENTLY_WEB_IMAGE}
+          EOF
+          docker compose -f docker-compose.yml --profile demo -f .compose.override.yml up -d
+
+      - name: Wait for /healthz
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8788/healthz; then exit 0; fi
+            sleep 2
+          done
+          echo "container failed to come up"
+          docker compose -f docker-compose.yml --profile demo logs
+          exit 1
+
+      - name: End-to-end curl checks
+        run: |
+          curl -fsS http://127.0.0.1:8788/healthz | grep -q '"ok": true'
+          curl -fsS http://127.0.0.1:8788/ | grep -q 'login-view'
+          curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8788/style.css
+          # Unauth API must return 401
+          curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8788/api/me
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.yml --profile demo down -v
+
+  # --------------------------------------------------------------------- #
+  # 5. PR-only image build (no push) — gives contributors a sanity check
+  # --------------------------------------------------------------------- #
+  docker-pr:
+    name: Build image (PR sanity check)
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: agently-web:pr-${{ github.event.number }}
+          cache-from: type=gha

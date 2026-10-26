@@ -1,0 +1,63 @@
+# docker-compose.tls.yml — overlay for HTTPS via Caddy.
+#
+# Use:
+#   DOMAIN=mail.example.com [email protected] \
+#     docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
+#
+# This overlay does NOT replace docker-compose.yml; it just adds a Caddy
+# service and publishes 80/443. The existing `agently-web` service is reused.
+#
+# Persistence:
+#   caddy-data   /data    — ACME account + issued certificates (Let's Encrypt)
+#                            Survives `docker compose down`, lost on `down -v`.
+#   caddy-config /config  — Caddy's in-memory runtime state, regenerated on boot
+#                            unless persisted (e.g. on-demand TLS cache).
+#   bind mount ./caddy-logs → /var/log/caddy   — human-readable access.log,
+#                            access.json, and error.log. Created automatically.
+#                            Override path with CADDY_LOGS_DIR.
+#
+# Override with env vars:
+#   CADDY_CERTS_VOLUME  — name of the cert volume (default: caddy-data)
+#                         OR a host path (e.g. /mnt/nas/caddy-certs)
+#   CADDY_LOGS_DIR      — host path for Caddy logs (default: ./caddy-logs)
+
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: agently-caddy
+    restart: unless-stopped
+    depends_on:
+      agently-web:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN=mail.example.com in your .env or shell}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-[email protected]}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # ACME account + issued TLS certificates. **Do not back this up to
+      # version control** — the ACME account key is sensitive.
+      - ${CADDY_CERTS_VOLUME:-caddy-data}:/data
+      # Caddy's runtime state (e.g. on-demand TLS cache, stored routes).
+      - caddy-config:/config
+      # Access / error logs — bind-mounted so you can grep / archive / ship
+      # to a log aggregator without exec-ing into the container.
+      - ${CADDY_LOGS_DIR:-./caddy-logs}:/var/log/caddy
+    networks:
+      - agently
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:2019/config/", "-O", "/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  agently-web:
+    # Override the published port — Caddy publishes 80/443 and proxies internally.
+    ports: []  # do not bind 8787 on host
+
+volumes:
+  caddy-data:
+  caddy-config:

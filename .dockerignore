@@ -1,0 +1,40 @@
+# Files and directories not needed inside the image.
+.git
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose.yml
+.docker
+.github
+
+# Test artifacts
+.pytest_cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.coverage
+htmlcov
+.tox
+.ruff_cache
+.mypy_cache
+
+# Runtime data — mounted as a volume, never baked into the image
+.data
+agently-py-data
+agently-py-data2
+agently-py-data3
+agently-py-data4
+agently-py-data5
+agently-py-final
+agently-web-real
+agently-py-real
+
+# Logs / temp
+*.log
+*.pid
+*.tmp
+.idea
+.vscode
+*.swp
+.DS_Store

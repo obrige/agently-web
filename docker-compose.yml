@@ -1,0 +1,95 @@
+version: "3.9"
+
+# Out-of-the-box docker compose for agently-web.
+#
+# Default behaviour: build the image locally from the Dockerfile next to this
+# file. Works on a fresh checkout with no configuration — just run:
+#
+#   docker compose up -d              # live mode (requires you to log in)
+#   docker compose --profile demo up -d   # demo mode, no QQ account
+#
+# Then open http://localhost:8787
+#
+# Pulling a pre-built image from GHCR instead of building locally:
+#   AGENTLY_WEB_IMAGE=ghcr.io/<your-github-username>/agently-web:latest \
+#     docker compose up -d
+# (The CI workflow publishes to ghcr.io/<github-username>/agently-web by default,
+#  independent of the repo name — see .github/workflows/ci.yml.)
+#
+# For HTTPS, also pass: -f docker-compose.tls.yml
+# (you must set DOMAIN=mail.example.com in the environment).
+#
+# Data persistence:
+#   - accounts.json          → /data/accounts.json     (OAuth tokens, profiles)
+#   - drafts.json            → /data/drafts.json
+#   - signatures.json        → /data/signatures.json
+#   - stars.json             → /data/stars.json
+#   - contacts.json          → /data/contacts.json
+# All five JSON files live under AGENTLY_WEB_DATA_DIR (/data by default).
+# They are stored in the `agently-data` named volume by default — that survives
+# `docker compose down` and `docker compose restart`, but NOT `down -v`.
+#
+# Override the volume location by setting AGENTLY_DATA_VOLUME in your shell
+# or .env. Useful for:
+#   * bind-mounting to a host directory you back up (e.g. NAS, /mnt/data)
+#   * pointing at a pre-existing dataset on another host (rsync --copy)
+#   * sharing one data dir between agently-web and agently-web-demo (demo only!)
+
+x-app: &app
+  # `build: .` is the default: `docker compose up -d` builds from ./Dockerfile.
+  # To pull a pre-built image instead, set AGENTLY_WEB_IMAGE — the CI workflow
+  # already wires that up for you; locally you'd run:
+  #   AGENTLY_WEB_IMAGE=ghcr.io/alice/agently-web:latest docker compose up -d
+  build: .
+  container_name: agently-web
+  restart: unless-stopped
+  environment:
+    PORT: "8787"
+    HOST: "0.0.0.0"
+    AGENTLY_WEB_DATA_DIR: /data
+  # The single mount point — the server stores all five JSON files in this dir.
+  # Override via the AGENTLY_DATA_VOLUME env var (named volume or host path).
+  volumes:
+    - ${AGENTLY_DATA_VOLUME:-agently-data}:/data
+  ports:
+    - "8787:8787"
+  networks:
+    - agently
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8787/healthz', timeout=3).status == 200 else 1)"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+    start_period: 10s
+
+services:
+  agently-web:
+    <<: *app
+    # If AGENTLY_WEB_IMAGE is set, use it; otherwise `build:` above kicks in.
+    image: ${AGENTLY_WEB_IMAGE:-}
+
+  # Demo profile — runs with seed data, no QQ account required.
+  agently-web-demo:
+    <<: *app
+    profiles: ["demo"]
+    environment:
+      PORT: "8787"
+      HOST: "0.0.0.0"
+      AGENTLY_WEB_DEMO: "1"
+      AGENTLY_WEB_DATA_DIR: /data
+    container_name: agently-web-demo
+    ports:
+      - "8788:8787"
+
+networks:
+  agently:
+    name: agently-net
+    driver: bridge
+
+volumes:
+  # Default named volume. Created by `docker compose up` automatically.
+  # Manage with:
+  #   docker volume inspect agently-data
+  #   docker volume ls | grep agently
+  #   docker run --rm -v agently-data:/data busybox ls -la /data
+  agently-data:
