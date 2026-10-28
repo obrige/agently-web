@@ -1,0 +1,58 @@
+# Dependabot — keep GitHub Actions, Docker base images and Python deps fresh.
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+
+version: 2
+
+updates:
+  # ---- GitHub Actions ------------------------------------------------- #
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels: ["dependencies", "ci"]
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+
+  # ---- Docker base images -------------------------------------------- #
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+    commit-message:
+      prefix: "docker"
+      include: "scope"
+    labels: ["dependencies", "docker"]
+    groups:
+      docker:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+
+  # ---- Python (pyproject.toml + Dockerfile pip installs) ------------- #
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels: ["dependencies", "python"]
+    groups:
+      python:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+    ignore:
+      # Don't auto-upgrade pytest — coordination with test-client.py matters
+      - dependency-name: "pytest"
+        versions:
+          - ">=10"

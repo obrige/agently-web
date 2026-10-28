@@ -1,0 +1,50 @@
+# Caddyfile — automatic Let's Encrypt for production.
+#
+# Quick start:
+#   1. Set DOMAIN (e.g. mail.example.com) in your .env
+#   2. Make sure ports 80 + 443 are reachable from the internet
+#   3. docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
+#
+# Caddy auto-issues and renews certificates via the ACME HTTP-01 challenge
+# (port 80 → /.well-known/acme-challenge/). For DNS-01 (wildcard certs)
+# swap the `email` global for one of the DNS provider modules — see
+# https://caddyserver.com/download.
+
+{$DOMAIN:localhost} {
+    # bind to 443 by default (TLS) and 80 for the ACME challenge
+    bind 0.0.0.0
+    tls {$ADMIN_EMAIL:[email protected]}
+
+    # compress and harden
+    encode zstd gzip
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options  "nosniff"
+        X-Frame-Options         "SAMEORIGIN"
+        Referrer-Policy         "no-referrer-when-downgrade"
+        -Server
+    }
+
+    # strip the proxy prefix; the upstream server sees the real client IP
+    reverse_proxy agently-web:8787 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        # websockets / long-polling keepalive
+        flush_interval -1
+    }
+
+    # health endpoint exposed on TLS for external monitors
+    handle /healthz {
+        reverse_proxy agently-web:8787
+    }
+
+    log {
+        level INFO
+        output file /data/caddy.log {
+            roll_size 10MiB
+            roll_keep 5
+        }
+    }
+}

@@ -1,0 +1,80 @@
+# agently-web — tool configuration
+#
+# Install dev tools:
+#   pip install pytest==9.1.1 ruff==0.7.4 black==24.10.0 mypy==1.13.0
+#
+# Run all checks (CI does the same):
+#   ruff check agently server.py tests
+#   ruff format --check agently server.py tests
+#   black --check --diff agently server.py tests
+#   mypy --strict --ignore-missing-imports agently
+#   pytest -v
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-ra --strict-markers --tb=short"
+
+# ---- ruff ----
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = ["**/__pycache__", "**/.pytest_cache"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # bugbear
+    "UP",  # pyupgrade
+    "SIM", # simplify
+    "C4",  # comprehensions
+]
+ignore = [
+    "E501", # line length (handled by formatter)
+    "B008", # intentional function-arg defaults in fixtures
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["agently", "tests"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ---- black (kept for users who prefer it over ruff format) ----
+[tool.black]
+target-version = ["py310", "py311", "py312", "py313"]
+line-length = 100
+extend-exclude = '''
+/(
+  \.git
+| \.pytest_cache
+| __pycache__
+| \.data
+)/
+'''
+
+# ---- mypy ----
+[tool.mypy]
+python_version = "3.10"
+strict = true
+ignore_missing_imports = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_return_any = true
+no_implicit_optional = true
+check_untyped_defs = true
+disallow_incomplete_defs = true
+exclude = ["^tests/"]
+
+[[tool.mypy.overrides]]
+module = "agently.demo"
+disallow_untyped_defs = false
